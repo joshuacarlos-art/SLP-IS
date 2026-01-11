@@ -66,7 +66,7 @@ export async function getCollection<T extends Document>(
   return db.collection<T>(collectionName);
 }
 
-// Function to safely convert string to ObjectId
+// Function to safely convert string to ObjectId - THIS WAS MISSING
 export function toObjectId(id: string): ObjectId {
   try {
     return new ObjectId(id);
