@@ -1,4 +1,4 @@
-import { MongoClient, Collection, Document, ObjectId } from 'mongodb';
+import { MongoClient, Collection, Document, ObjectId, Db, Filter } from 'mongodb';
 
 const uri = process.env.MONGODB_URI as string;
 
@@ -9,14 +9,21 @@ if (!uri) {
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
-const options = {
+interface MongoOptions {
+  maxPoolSize: number;
+  serverSelectionTimeoutMS: number;
+  socketTimeoutMS: number;
+}
+
+const options: MongoOptions = {
   maxPoolSize: 10,
   serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 45000,
 };
 
+// Development mode: reuse connection
 if (process.env.NODE_ENV === 'development') {
-  let globalWithMongo = global as typeof globalThis & {
+  const globalWithMongo = global as typeof globalThis & {
     _mongoClientPromise?: Promise<MongoClient>;
   };
 
@@ -26,6 +33,7 @@ if (process.env.NODE_ENV === 'development') {
   }
   clientPromise = globalWithMongo._mongoClientPromise;
 } else {
+  // Production mode: create new connection
   client = new MongoClient(uri, options);
   clientPromise = client.connect();
 }
@@ -33,18 +41,21 @@ if (process.env.NODE_ENV === 'development') {
 export default clientPromise;
 
 // Utility functions
-export async function getDatabase(dbName?: string) {
+export async function getDatabase(dbName?: string): Promise<Db> {
   const client = await clientPromise;
   return client.db(dbName || process.env.DATABASE_NAME || 'slp');
 }
 
-export async function getCollection(collectionName: string, dbName?: string) {
+export async function getCollection<T extends Document>(
+  collectionName: string, 
+  dbName?: string
+): Promise<Collection<T>> {
   const db = await getDatabase(dbName);
-  return db.collection(collectionName);
+  return db.collection<T>(collectionName);
 }
 
 // Function to safely convert string to ObjectId
-export async function toObjectId(id: string): Promise<ObjectId> {
+export function toObjectId(id: string): ObjectId {
   try {
     return new ObjectId(id);
   } catch {
@@ -61,46 +72,64 @@ export function safeToObjectId(id: string): ObjectId | null {
   }
 }
 
-export function convertDocId(doc: any) {
-  if (doc && doc._id && doc._id instanceof ObjectId) {
+// Document type helpers
+interface BaseDocument {
+  [key: string]: unknown;
+  _id?: ObjectId | string;
+}
+
+export interface DocumentWithStringId {
+  [key: string]: unknown;
+  _id?: string;
+}
+
+export function convertDocId<T extends BaseDocument>(doc: T | null): DocumentWithStringId | null {
+  if (!doc) return null;
+  
+  if (doc._id && doc._id instanceof ObjectId) {
+    const { _id, ...rest } = doc;
     return {
-      ...doc,
-      _id: doc._id.toString()
+      ...rest,
+      _id: _id.toString()
     };
   }
-  return doc;
+  return doc as DocumentWithStringId;
 }
 
-export function convertDocsIds(docs: any[]) {
-  return docs.map(doc => convertDocId(doc));
+export function convertDocsIds<T extends BaseDocument>(docs: T[]): DocumentWithStringId[] {
+  return docs.map(doc => convertDocId(doc)).filter(Boolean) as DocumentWithStringId[];
 }
 
-// Helper to build query for string ID (handles both string _id and numeric id)
-export async function buildIdQuery(id: string): Promise<any> {
+// Helper to build query for string ID
+export async function buildIdQuery(id: string): Promise<{ $or: Filter<Document>[] }> {
   const numericId = parseInt(id, 10);
   const objectId = safeToObjectId(id);
   
   // Build query with multiple possibilities
-  const query: any = { $or: [] };
+  const query = { $or: [] as Filter<Document>[] };
   
   // Try numeric ID if valid number
   if (!isNaN(numericId)) {
-    query.$or.push({ id: numericId });
+    query.$or.push({ id: numericId } as Filter<Document>);
   }
   
   // Try ObjectId if valid
   if (objectId) {
-    query.$or.push({ _id: objectId });
+    query.$or.push({ _id: objectId } as Filter<Document>);
   }
   
   // Try as string for other fields
-  query.$or.push({ pig_tag_number: id });
+  query.$or.push({ pig_tag_number: id } as Filter<Document>);
   
   return query;
 }
 
 // Helper to find document by any ID format
-export async function findDocument(collection: Collection, id: string): Promise<any> {
+export async function findDocument<T extends Document>(
+  collection: Collection<T>, 
+  id: string
+): Promise<DocumentWithStringId | null> {
   const query = await buildIdQuery(id);
-  return await collection.findOne(query);
+  const doc = await collection.findOne(query as Filter<T>);
+  return convertDocId(doc as BaseDocument | null);
 }

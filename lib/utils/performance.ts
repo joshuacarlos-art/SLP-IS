@@ -1,6 +1,35 @@
-import { Caretaker, PerformanceAssessment, PerformanceCategoryScores, PerformanceLevel } from '@/types/performance';
+// Define types locally to avoid import errors
+interface Caretaker {
+  _id?: string;
+  firstName?: string;
+  lastName?: string;
+  middleName?: string;
+  extension?: string;
+  phone?: string;
+  email?: string;
+  status?: string;
+  [key: string]: unknown;
+}
 
-export const getFullName = (caretaker: Caretaker): string => {
+interface PerformanceAssessment {
+  _id?: string;
+  caretakerId: string;
+  rating: number;
+  categories?: PerformanceCategoryScores;
+  [key: string]: unknown;
+}
+
+interface PerformanceCategoryScores {
+  punctuality: number;
+  communication: number;
+  patientCare: number;
+  professionalism: number;
+  technicalSkills: number;
+}
+
+type PerformanceLevel = 'excellent' | 'very-good' | 'good' | 'satisfactory' | 'needs-improvement';
+
+export const getFullName = (caretaker: Caretaker | null | undefined): string => {
   if (!caretaker) return 'Unknown';
   
   let fullName = `${caretaker.firstName || ''} ${caretaker.lastName || ''}`.trim();
@@ -37,7 +66,7 @@ export const calculatePerformanceScore = (assessments: PerformanceAssessment[]):
     };
   }
 
-  const totalRating = assessments.reduce((sum, a) => sum + a.rating, 0);
+  const totalRating = assessments.reduce((sum, a) => sum + (a.rating || 0), 0);
   const averageRating = totalRating / assessments.length;
   const score = averageRating * 20;
   
@@ -53,21 +82,20 @@ export const calculatePerformanceScore = (assessments: PerformanceAssessment[]):
   
   assessments.forEach(assessment => {
     const categories = assessment.categories || {
-      punctuality: assessment.rating,
-      communication: assessment.rating,
-      patientCare: assessment.rating,
-      professionalism: assessment.rating,
-      technicalSkills: assessment.rating
+      punctuality: assessment.rating || 0,
+      communication: assessment.rating || 0,
+      patientCare: assessment.rating || 0,
+      professionalism: assessment.rating || 0,
+      technicalSkills: assessment.rating || 0
     };
     
-    // Check if this assessment has proper categories
     if (assessment.categories) {
       assessmentCountWithCategories++;
     }
     
     Object.keys(categoryTotals).forEach(key => {
-      const typedKey = key as keyof PerformanceCategoryScores;
-      categoryTotals[typedKey] += categories[typedKey];
+      const categoryKey = key as keyof PerformanceCategoryScores;
+      categoryTotals[categoryKey] += categories[categoryKey] || 0;
     });
   });
   
@@ -76,17 +104,17 @@ export const calculatePerformanceScore = (assessments: PerformanceAssessment[]):
     : assessments.length;
   
   const categoryAverages: PerformanceCategoryScores = {
-    punctuality: categoryTotals.punctuality / effectiveAssessmentCount,
-    communication: categoryTotals.communication / effectiveAssessmentCount,
-    patientCare: categoryTotals.patientCare / effectiveAssessmentCount,
-    professionalism: categoryTotals.professionalism / effectiveAssessmentCount,
-    technicalSkills: categoryTotals.technicalSkills / effectiveAssessmentCount
+    punctuality: effectiveAssessmentCount > 0 ? categoryTotals.punctuality / effectiveAssessmentCount : 0,
+    communication: effectiveAssessmentCount > 0 ? categoryTotals.communication / effectiveAssessmentCount : 0,
+    patientCare: effectiveAssessmentCount > 0 ? categoryTotals.patientCare / effectiveAssessmentCount : 0,
+    professionalism: effectiveAssessmentCount > 0 ? categoryTotals.professionalism / effectiveAssessmentCount : 0,
+    technicalSkills: effectiveAssessmentCount > 0 ? categoryTotals.technicalSkills / effectiveAssessmentCount : 0
   };
 
-  const level = averageRating >= 4.5 ? 'excellent' :
-                averageRating >= 4.0 ? 'very-good' :
-                averageRating >= 3.5 ? 'good' :
-                averageRating >= 3.0 ? 'satisfactory' : 'needs-improvement';
+  const level: PerformanceLevel = averageRating >= 4.5 ? 'excellent' :
+                                  averageRating >= 4.0 ? 'very-good' :
+                                  averageRating >= 3.5 ? 'good' :
+                                  averageRating >= 3.0 ? 'satisfactory' : 'needs-improvement';
 
   return {
     averageRating,
@@ -119,23 +147,21 @@ export const getBadgeColor = (score: number): string => {
 };
 
 export const getStatusColor = (status: string | undefined): string => {
-  switch (status?.toLowerCase()) {
-    case 'active':
-      return 'bg-green-100 text-green-800 border-green-200';
-    case 'on-leave':
-    case 'on_leave':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    case 'inactive':
-      return 'bg-red-100 text-red-800 border-red-200';
-    default:
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-  }
+  if (!status) return 'bg-gray-100 text-gray-800 border-gray-200';
+  
+  const lowerStatus = status.toLowerCase();
+  if (lowerStatus === 'active') return 'bg-green-100 text-green-800 border-green-200';
+  if (lowerStatus === 'on-leave' || lowerStatus === 'on_leave') return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+  if (lowerStatus === 'inactive') return 'bg-red-100 text-red-800 border-red-200';
+  
+  return 'bg-gray-100 text-gray-800 border-gray-200';
 };
 
 export const formatStatus = (status: string | undefined): string => {
   if (!status) return 'Unknown';
-  return status.replace(/[-_]/g, ' ').charAt(0).toUpperCase() + 
-         status.slice(1).replace(/[-_]/g, ' ');
+  
+  const formatted = status.replace(/[-_]/g, ' ');
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
 };
 
 export const getRankColor = (rank: number): string => {

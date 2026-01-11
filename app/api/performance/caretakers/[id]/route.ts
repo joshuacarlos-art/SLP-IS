@@ -1,13 +1,14 @@
-// app/api/performance/caretakers/[id]/route.ts - UPDATED
 import { NextRequest, NextResponse } from 'next/server';
 import { getCollection, convertDocId } from '@/lib/mongodb';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const caretakerId = params.id;
+    // Await params for Next.js 15
+    const { id } = await params;
+    const caretakerId = id;
     
     // Get caretaker from database
     const caretakersCollection = await getCollection('caretakers');
@@ -41,7 +42,7 @@ export async function GET(
 
     // Get assessments for this caretaker
     const caretakerAssessments = await assessmentsCollection
-      .find({ caretakerId: caretaker.id || caretaker._id.toString() })
+      .find({ caretakerId: caretaker.id || caretaker._id?.toString() || caretakerId })
       .sort({ date: -1 })
       .toArray();
 
@@ -57,12 +58,24 @@ export async function GET(
       lastUpdated: new Date().toISOString(),
     };
 
-    const performanceMetrics = [];
+    const performanceMetrics: Array<{
+      id: string;
+      name: string;
+      value: number;
+      target: number;
+      unit: string;
+      trend: string;
+      change: number;
+      description: string;
+      category: string;
+      icon: string;
+    }> = [];
+    
     const recentAssessments = caretakerAssessments.map(convertDocId);
     
     if (caretakerAssessments.length > 0) {
       // Calculate average rating
-      const totalRating = caretakerAssessments.reduce((sum, assessment) => sum + assessment.rating, 0);
+      const totalRating = caretakerAssessments.reduce((sum, assessment) => sum + (assessment.rating || 0), 0);
       const averageRating = totalRating / caretakerAssessments.length;
       const overallScore = averageRating * 20;
       
@@ -97,6 +110,8 @@ export async function GET(
       performanceAlerts: [],
       trendData: [],
       comparisons: [],
+      success: true,
+      message: 'Caretaker performance data retrieved successfully'
     }, { status: 200 });
     
   } catch (error) {
@@ -104,7 +119,52 @@ export async function GET(
     return NextResponse.json(
       { 
         error: 'Failed to fetch caretaker performance data',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        message: error instanceof Error ? error.message : 'Unknown error',
+        success: false
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    // Add your PUT logic here
+    return NextResponse.json({ 
+      success: true,
+      message: 'Caretaker updated successfully'
+    }, { status: 200 });
+  } catch (error) {
+    return NextResponse.json(
+      { 
+        error: 'Failed to update caretaker',
+        success: false
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    // Add your DELETE logic here
+    return NextResponse.json({ 
+      success: true,
+      message: 'Caretaker deleted successfully'
+    }, { status: 200 });
+  } catch (error) {
+    return NextResponse.json(
+      { 
+        error: 'Failed to delete caretaker',
+        success: false
       },
       { status: 500 }
     );

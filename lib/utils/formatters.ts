@@ -13,7 +13,7 @@ export const formatDate = (date: Date | string | undefined): string => {
       month: 'short',
       day: 'numeric'
     });
-  } catch (error) {
+  } catch {
     return 'Invalid date';
   }
 };
@@ -35,7 +35,7 @@ export const formatDateTime = (date: Date | string | undefined): string => {
       hour: '2-digit',
       minute: '2-digit'
     });
-  } catch (error) {
+  } catch {
     return 'Invalid date';
   }
 };
@@ -91,7 +91,7 @@ export const formatRelativeTime = (dateString: string | Date | undefined): strin
     } else {
       return formatDate(date);
     }
-  } catch (error) {
+  } catch {
     return 'Invalid date';
   }
 };
@@ -129,7 +129,7 @@ export const formatAssociationName = (associationId: string | undefined): string
     }
     
     return name;
-  } catch (error) {
+  } catch {
     return 'Invalid Association Name';
   }
 };

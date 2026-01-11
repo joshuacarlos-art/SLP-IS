@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { useState, useEffect, Suspense } from 'react';
 import { 
   Search, Award, Eye, Printer, Trash2 
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
+// ==================== INTERFACES ====================
 interface FinalAssessment {
   id: string;
   project_id: string;
@@ -806,8 +809,8 @@ function AssessmentViewModal({
   );
 }
 
-// ==================== CERTIFICATION PAGE COMPONENT ====================
-export default function CertificationPage() {
+// ==================== MAIN CONTENT COMPONENT (WRAPPED IN SUSPENSE) ====================
+function CertificationPageContent() {
   const [assessments, setAssessments] = useState<FinalAssessment[]>([
     {
       id: "1",
@@ -840,6 +843,7 @@ export default function CertificationPage() {
     search: ''
   });
 
+  // This is now safely wrapped in Suspense
   const searchParams = useSearchParams();
   const assessmentIdFromUrl = searchParams.get('assessmentId');
 
@@ -1283,5 +1287,21 @@ export default function CertificationPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// ==================== MAIN EXPORT COMPONENT (WITH SUSPENSE) ====================
+export default function CertificationPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="text-gray-600 text-sm mt-2">Loading certification page...</p>
+        </div>
+      </div>
+    }>
+      <CertificationPageContent />
+    </Suspense>
   );
 }
