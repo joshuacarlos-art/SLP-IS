@@ -1,4 +1,4 @@
-import clientPromise from '../mongodb'; // Adjust path based on your structure
+import clientPromise from '../mongodb'; // Import the promise directly
 import { ObjectId } from 'mongodb';
 
 const dbName = process.env.DATABASE_NAME || 'slp';
@@ -6,7 +6,7 @@ const dbName = process.env.DATABASE_NAME || 'slp';
 // Caretaker operations
 export async function getCaretakers(status?: string): Promise<any[]> {
   try {
-    const client = await clientPromise;
+    const client = await clientPromise; // This is now a Promise<MongoClient>
     const db = client.db(dbName);
     
     let query = {};

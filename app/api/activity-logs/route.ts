@@ -1,5 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import clientPromise from '@/lib/mongodb';
+
+// Disable static generation for this route
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+// Helper function to safely get MongoDB connection
+async function getMongoDB() {
+  try {
+    // Dynamic import to avoid build-time errors
+    const { getCollection, checkMongoConnection } = await import('@/lib/mongodb');
+    
+    // Check if MongoDB is available
+    const isConnected = await checkMongoConnection();
+    if (!isConnected) {
+      throw new Error('MongoDB connection failed');
+    }
+    
+    return await getCollection('activityLogs');
+  } catch (error) {
+    console.error('MongoDB initialization error:', error);
+    throw new Error('Database service unavailable');
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,9 +32,7 @@ export async function GET(request: NextRequest) {
     const module = searchParams.get('module') || 'all';
     const status = searchParams.get('status') || 'all';
 
-    const client = await clientPromise;
-    const db = client.db();
-    const collection = db.collection('activityLogs');
+    const collection = await getMongoDB();
 
     const filter: any = {};
     
@@ -44,14 +64,14 @@ export async function GET(request: NextRequest) {
       .toArray();
 
     const formattedActivities = activities.map(activity => ({
-      id: activity._id.toString(),
-      timestamp: new Date(activity.timestamp),
-      user: activity.user,
-      action: activity.action,
-      module: activity.module,
-      details: activity.details,
-      ipAddress: activity.ipAddress,
-      status: activity.status
+      id: activity._id?.toString() || '',
+      timestamp: activity.timestamp ? new Date(activity.timestamp) : new Date(),
+      user: activity.user || 'Unknown',
+      action: activity.action || '',
+      module: activity.module || 'General',
+      details: activity.details || '',
+      ipAddress: activity.ipAddress || 'Unknown',
+      status: activity.status || 'success'
     }));
 
     return NextResponse.json({
@@ -66,6 +86,21 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error fetching activity logs:', error);
+    
+    // Return empty data instead of error during build
+    if (process.env.NODE_ENV === 'production' && error instanceof Error && error.message.includes('MongoDB')) {
+      return NextResponse.json({
+        activities: [],
+        pagination: {
+          currentPage: 1,
+          totalPages: 0,
+          totalItems: 0,
+          itemsPerPage: 20
+        },
+        message: 'Activity logs service is temporarily unavailable'
+      });
+    }
+    
     return NextResponse.json(
       { error: 'Failed to fetch activity logs' },
       { status: 500 }
@@ -76,45 +111,46 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const client = await clientPromise;
-    const db = client.db();
-    const collection = db.collection('activityLogs');
+    const collection = await getMongoDB();
 
     const newActivity = {
       timestamp: new Date(),
-      user: body.user,
-      action: body.action,
-      module: body.module,
-      details: body.details,
-      ipAddress: body.ipAddress || 'Unknown',
+      user: body.user || 'System',
+      action: body.action || 'Unknown Action',
+      module: body.module || 'General',
+      details: body.details || '',
+      ipAddress: body.ipAddress || request.headers.get('x-forwarded-for') || 'Unknown',
       status: body.status || 'success'
     };
 
     const result = await collection.insertOne(newActivity);
 
     return NextResponse.json({
-      id: result.insertedId.toString(),
-      ...newActivity
+      success: true,
+      id: result.insertedId?.toString() || '',
+      ...newActivity,
+      message: 'Activity logged successfully'
     }, { status: 201 });
 
   } catch (error) {
     console.error('Error creating activity log:', error);
-    return NextResponse.json(
-      { error: 'Failed to create activity log' },
-      { status: 500 }
-    );
+    
+    // Still return success even if logging fails (graceful degradation)
+    return NextResponse.json({
+      success: false,
+      message: 'Activity logging service temporarily unavailable',
+      error: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
+    }, { status: 200 });
   }
 }
 
 export async function DELETE() {
   try {
-    const client = await clientPromise;
-    const db = client.db();
-    const collection = db.collection('activityLogs');
-
+    const collection = await getMongoDB();
     const result = await collection.deleteMany({});
 
     return NextResponse.json({
+      success: true,
       message: `Successfully deleted ${result.deletedCount} activity logs`,
       deletedCount: result.deletedCount
     });
@@ -122,8 +158,11 @@ export async function DELETE() {
   } catch (error) {
     console.error('Error clearing activity logs:', error);
     return NextResponse.json(
-      { error: 'Failed to clear activity logs' },
-      { status: 500 }
+      { 
+        error: 'Failed to clear activity logs',
+        message: 'Database service unavailable'
+      },
+      { status: 503 }
     );
   }
 }

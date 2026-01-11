@@ -2,10 +2,7 @@ import { MongoClient, Collection, Document, ObjectId, Db, Filter } from 'mongodb
 
 const uri = process.env.MONGODB_URI as string;
 
-if (!uri) {
-  throw new Error('Please define the MONGODB_URI environment variable');
-}
-
+// Keep the old pattern for compatibility
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
@@ -21,27 +18,42 @@ const options: MongoOptions = {
   socketTimeoutMS: 45000,
 };
 
-// Development mode: reuse connection
-if (process.env.NODE_ENV === 'development') {
-  const globalWithMongo = global as typeof globalThis & {
-    _mongoClientPromise?: Promise<MongoClient>;
-  };
+// Initialize only if URI exists
+if (uri) {
+  if (process.env.NODE_ENV === 'development') {
+    const globalWithMongo = global as typeof globalThis & {
+      _mongoClientPromise?: Promise<MongoClient>;
+    };
 
-  if (!globalWithMongo._mongoClientPromise) {
+    if (!globalWithMongo._mongoClientPromise) {
+      client = new MongoClient(uri, options);
+      globalWithMongo._mongoClientPromise = client.connect();
+    }
+    clientPromise = globalWithMongo._mongoClientPromise;
+  } else {
+    // Production mode
     client = new MongoClient(uri, options);
-    globalWithMongo._mongoClientPromise = client.connect();
+    clientPromise = client.connect();
   }
-  clientPromise = globalWithMongo._mongoClientPromise;
 } else {
-  // Production mode: create new connection
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect();
+  // Fallback - create a promise that will reject if used without URI
+  clientPromise = Promise.reject(new Error('MONGODB_URI is not defined'));
 }
 
+// Export the promise directly for backward compatibility
 export default clientPromise;
+
+// Safe wrapper function (optional)
+export function getClientPromise(): Promise<MongoClient> {
+  return clientPromise;
+}
 
 // Utility functions
 export async function getDatabase(dbName?: string): Promise<Db> {
+  if (!uri) {
+    throw new Error('MONGODB_URI is not defined');
+  }
+  
   const client = await clientPromise;
   return client.db(dbName || process.env.DATABASE_NAME || 'slp');
 }
@@ -101,7 +113,7 @@ export function convertDocsIds<T extends BaseDocument>(docs: T[]): DocumentWithS
 }
 
 // Helper to build query for string ID
-export async function buildIdQuery(id: string): Promise<{ $or: Filter<Document>[] }> {
+export function buildIdQuery(id: string): { $or: Filter<Document>[] } {
   const numericId = parseInt(id, 10);
   const objectId = safeToObjectId(id);
   
@@ -129,7 +141,24 @@ export async function findDocument<T extends Document>(
   collection: Collection<T>, 
   id: string
 ): Promise<DocumentWithStringId | null> {
-  const query = await buildIdQuery(id);
+  const query = buildIdQuery(id);
   const doc = await collection.findOne(query as Filter<T>);
   return convertDocId(doc as BaseDocument | null);
+}
+
+// Check MongoDB connection health
+export async function checkMongoConnection(): Promise<boolean> {
+  try {
+    if (!uri) {
+      console.warn('MONGODB_URI is not defined');
+      return false;
+    }
+    
+    const client = await clientPromise;
+    await client.db().admin().ping();
+    return true;
+  } catch (error) {
+    console.error('MongoDB connection check failed:', error);
+    return false;
+  }
 }
